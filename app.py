@@ -1,6 +1,6 @@
 ## 1️⃣ Replace `app.py` with a clean final version
 
-Open `C:\data\products\unigroceries-backend\app.py` in VS Code / Notepad.
+Open  `C:\data\products\unigroceries-backend\app.py` in VS Code / Notepad.
 
 Delete **everything** in that file and paste this exact code:
 
