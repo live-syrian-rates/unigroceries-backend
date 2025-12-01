@@ -1,75 +1,77 @@
-# app.py — minimal & robust Flask server
-import os, csv, json, re
-from flask import Flask, jsonify, make_response
+from flask import Flask, request, jsonify
+import csv
+import os
 
 app = Flask(__name__)
 
-# ----- Resolve CSV path safely (works no matter where you run from)
-HERE = os.path.dirname(os.path.abspath(__file__))          # ...\backend
-ROOT = os.path.abspath(os.path.join(HERE, ".."))           # project root
-CANDIDATES = [
-    os.environ.get("PRODUCTS_CSV"),                        # optional override
-    os.path.join(HERE, "products.csv"),                    # backend/products.csv
-    os.path.join(ROOT, "products.csv"),                    # root/products.csv
-    os.path.join(ROOT, "products - Copy.csv"),             # root/products - Copy.csv
-]
-CSV_PATH = next((p for p in CANDIDATES if p and os.path.exists(p)), None)
+# ------------------------------------------------------------
+# 📁 1. PATH CONFIGURATION
+# ------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+PRODUCTS_DIR = os.path.join(DATA_DIR, "products")
 
-# ---- Cleaning helpers
-_ARABIC_INDIC = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+def read_csv(relative_path):
+    """Read CSV located under data/ and return list[dict]"""
+    full_path = os.path.join(DATA_DIR, relative_path)
 
-def strip_citations(s: str) -> str:
-    # remove patterns like:  [cite: 7]
-    return re.sub(r"\s*\[cite:\s*[^]]+\]\s*", "", s or "")
+    if not os.path.exists(full_path):
+        raise FileNotFoundError(f"CSV not found: {full_path}")
 
-def normalize_digits(s: str) -> str:
-    return (s or "").translate(_ARABIC_INDIC)
+    with open(full_path, encoding="utf-8") as f:
+        return list(csv.DictReader(f))
 
-def clean_price(raw: str) -> float:
-    """
-    Accept '7.25', '7,25', ' 7.25 [cite: 7]', '٧٫٢٥', 'USD 7.25', etc.
-    Extracts the first numeric token and converts comma to dot.
-    """
-    s = normalize_digits(strip_citations(str(raw))).strip()
-    m = re.search(r"[-+]?\d+(?:[.,]\d+)?", s)
-    if not m:
-        return 0.0
-    return float(m.group(0).replace(",", "."))
 
-@app.get("/health")
-def health():
-    return {"ok": True, "csv": CSV_PATH or "NOT FOUND"}
-
-@app.get("/")
-def root():
-    return f"Server OK. CSV: {CSV_PATH or 'NOT FOUND'}  • Try /products"
-
-@app.get("/products")
+# ------------------------------------------------------------
+# 🛒 2. PRODUCTS ENDPOINT
+# ------------------------------------------------------------
+@app.route("/products", methods=["GET"])
 def products():
-    try:
-        if not CSV_PATH:
-            raise FileNotFoundError(f"No CSV found in {CANDIDATES}")
+    # Example: /products?category=Snacks
+    category = request.args.get("category")
 
-        rows = []
-        with open(CSV_PATH, "r", encoding="utf-8-sig", newline="") as f:
-            r = csv.DictReader(f)
-            if not r.fieldnames:
-                raise ValueError("CSV has no headers.")
-            for row in r:
-                # Clean all string fields (remove [cite: ...])
-                for k, v in list(row.items()):
-                    if isinstance(v, str):
-                        row[k] = strip_citations(v).strip()
-                # Robust price parsing
-                row["price (جملة الجملة (دولار))"] = clean_price(
-                    row.get("price (جملة الجملة (دولار))", "")
-                )
-                rows.append(row)
+    if category:
+        filename = f"{category}.csv"
+        relative_path = f"products/{filename}"
+        full_path = os.path.join(PRODUCTS_DIR, filename)
 
-        return jsonify(rows)
-    except Exception as e:
-        return make_response((f"/products failed: {e}", 500))
+        if not os.path.exists(full_path):
+            return jsonify({"error": f"Category '{category}' not found"}), 404
 
+        return jsonify(read_csv(relative_path))
+
+    # Legacy fallback (old behavior)
+    return jsonify(read_csv("products.csv"))
+
+
+# ------------------------------------------------------------
+# 📰 3. MESSAGE ENDPOINT (state, message, news)
+# ------------------------------------------------------------
+@app.route("/message", methods=["GET"])
+def message():
+    rows = read_csv("message.csv")
+
+    # Expect exactly 1 row
+    row = rows[0] if rows else {}
+
+    return jsonify({
+        "state": int(row.get("state", 0)),
+        "message": row.get("message", ""),
+        "news": row.get("news", "")
+    })
+
+
+# ------------------------------------------------------------
+# ❤️ 4. HEALTH CHECK
+# ------------------------------------------------------------
+@app.route("/", methods=["GET"])
+def home():
+    return "UniGroceries backend is running."
+
+
+# ------------------------------------------------------------
+# 🚀 5. RUN SERVER
+# ------------------------------------------------------------
 if __name__ == "__main__":
-    # Run in debug so you see tracebacks if anything goes wrong
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
