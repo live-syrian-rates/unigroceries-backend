@@ -54,16 +54,16 @@ def message():
     rows = read_csv("message.csv")
     row = rows[0] if rows else {}
 
-    # Read and normalize state
-    raw = row.get("state") or row.get("State") or "0"
-    raw_str = str(raw).strip().lower()
-    state_num = 1 if raw_str in ("1", "on", "true") else 0
+    # Read state as STRING exactly as in CSV (e.g. "00000001", "11111111")
+    raw_state = row.get("state") or row.get("State") or "0"
+    state_str = str(raw_state).strip()
 
     return jsonify({
-        "state": state_num,
+        "state": state_str,
         "message": row.get("message", ""),
         "news": row.get("news", ""),
     })
+
 
 # ------------------------------------------------------------
 # 4. HEALTH CHECK
